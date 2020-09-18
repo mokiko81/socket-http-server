@@ -1,39 +1,35 @@
 import socket
 import sys
 import traceback
+import os
+import mimetypes
+
+DIRECTORY = 'webroot'
 
 def response_ok(body=b"This is a minimal response", mimetype=b"text/plain"):
     """
     returns a basic HTTP response
-    Ex:
-        response_ok(
-            b"<html><h1>Welcome:</h1></html>",
-            b"text/html"
-        ) ->
-
-        b'''
-        HTTP/1.1 200 OK\r\n
-        Content-Type: text/html\r\n
-        \r\n
-        <html><h1>Welcome:</h1></html>\r\n
-        '''
     """
-
-    # TODO: Implement response_ok
-    return b""
+    return b"\r\n".join([
+        b"HTTP/1.1 200 OK",
+        b"Content-Type: " + mimetype,
+        b"",
+        body,
+        ])
 
 def response_method_not_allowed():
     """Returns a 405 Method Not Allowed response"""
-
-    # TODO: Implement response_method_not_allowed
-    return b""
+    return b"\r\n".join([
+        b"HTTP/1.1 405 Method Not Allowed",
+        b"",
+        b"You can't do that on this server!",
+        ])
 
 
 def response_not_found():
     """Returns a 404 Not Found response"""
-
-    # TODO: Implement response_not_found
-    return b""
+    return b"\r\n".join([
+        b"HTTP/1.1 404 Not Found"])
 
 
 def parse_request(request):
@@ -43,53 +39,47 @@ def parse_request(request):
     This server only handles GET requests, so this method shall raise a
     NotImplementedError if the method of the request is not GET.
     """
+    method, path, version = request.split("\r\n")[0].split(" ")
+    print('Method: {}\nPath: {}\nVersion: {}'.format(method, path, version))
+    if method != "GET":
+        raise NotImplementedError
 
-    # TODO: implement parse_request
-    return ""
+    return path
 
 def response_path(path):
-    """
-    This method should return appropriate content and a mime type.
-
-    If the requested path is a directory, then the content should be a
-    plain-text listing of the contents with mimetype `text/plain`.
-
-    If the path is a file, it should return the contents of that file
-    and its correct mimetype.
-
-    If the path does not map to a real location, it should raise an
-    exception that the server can catch to return a 404 response.
-
-    Ex:
-        response_path('/a_web_page.html') -> (b"<html><h1>North Carolina...",
-                                            b"text/html")
-
-        response_path('/images/sample_1.png')
-                        -> (b"A12BCF...",  # contents of sample_1.png
-                            b"image/png")
-
-        response_path('/') -> (b"images/, a_web_page.html, make_type.py,...",
-                             b"text/plain")
-
-        response_path('/a_page_that_doesnt_exist.html') -> Raises a NameError
-
-    """
-
-    # TODO: Raise a NameError if the requested content is not present
-    # under webroot.
-
-    # TODO: Fill in the appropriate content and mime_type give the path.
-    # See the assignment guidelines for help on "mapping mime-types", though
-    # you might need to create a special case for handling make_time.py
-    #
-    # If the path is "make_time.py", then you may OPTIONALLY return the
-    # result of executing `make_time.py`. But you need only return the
-    # CONTENTS of `make_time.py`.
-    
     content = b"not implemented"
     mime_type = b"not implemented"
 
-    return content, mime_type
+    path = DIRECTORY + path
+
+    if path[-1] == '/':
+        try:
+            listings = os.listdir(path)
+            content = bytes("\n".join(listings),'utf-8')
+            mime_type = 'text/plain'
+        except:
+            raise NameError
+    elif '.' not in path:
+        try:
+            path = path + '/'
+            listings = os.listdir(path)
+            content = bytes("\n".join(listings),'utf-8')
+            mime_type = 'text/plain'
+        except:
+            raise NameError   
+    else:
+        try:
+            in_file = open(path, 'rb')
+            content = in_file.read()
+
+            splitpath = path.split('/')
+            file_name = splitpath[len(splitpath)-1]
+            direc = path.strip(splitpath[len(splitpath)-1])
+            mime_type = mimetypes.guess_type(file_name)[0]
+        except:
+            raise NameError
+
+    return content, bytes(mime_type, 'utf-8')
 
 
 def server(log_buffer=sys.stderr):
@@ -118,22 +108,25 @@ def server(log_buffer=sys.stderr):
 
                 print("Request received:\n{}\n\n".format(request))
 
-                # TODO: Use parse_request to retrieve the path from the request.
+                try:
+                    path = parse_request(request)
+                    content, mimetype = response_path(path)
 
-                # TODO: Use response_path to retrieve the content and the mimetype,
-                # based on the request path.
+                    print('Content: {}\nMimetype: {}\n'.format(content, mimetype))
 
-                # TODO; If parse_request raised a NotImplementedError, then let
-                # response be a method_not_allowed response. If response_path raised
-                # a NameError, then let response be a not_found response. Else,
-                # use the content and mimetype from response_path to build a 
-                # response_ok.
-                response = response_ok(
-                    body=b"Welcome to my web server",
-                    mimetype=b"text/plain"
-                )
+                    response = response_ok(
+                        body=content,
+                        mimetype=mimetype
+                    )
+
+
+                except NotImplementedError:
+                    response = response_method_not_allowed()
+                except (NameError, FileNotFoundError):
+                    response = response_not_found()
 
                 conn.sendall(response)
+
             except:
                 traceback.print_exc()
             finally:
